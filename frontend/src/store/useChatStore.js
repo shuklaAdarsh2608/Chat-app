@@ -28,7 +28,7 @@ export const useChatStore = create((set, get) => ({
     set({ isMessagesLoading: true });
     try {
       const res = await axiosInstance.get(`/messages/${userId}`);
-      set({ messages: res.data });
+      set({ messages: res.data || [] });
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to load messages");
     } finally {
@@ -47,20 +47,33 @@ export const useChatStore = create((set, get) => ({
     }
 
     try {
-      // Save to DB
+      const isFormData = messageData instanceof FormData;
       const res = await axiosInstance.post(
         `/messages/send/${selectedUser._id}`,
-        messageData
+        messageData,
+        isFormData
+          ? { headers: { "Content-Type": "multipart/form-data" } }
+          : {}
       );
 
       const savedMessage = res.data;
 
-      // Update own UI instantly
-      set({ messages: [...messages, savedMessage] });
+      // Ensure correct field names
+      const formattedMessage = {
+        _id: savedMessage._id,
+        text: savedMessage.text || "",
+        imageUrl: savedMessage.imageUrl || "",
+        senderId: savedMessage.senderId,
+        receiverId: savedMessage.receiverId,
+        createdAt: savedMessage.createdAt
+      };
 
-      // Emit to receiver via socket (include image if present)
+      // Update UI instantly
+      set({ messages: [...messages, formattedMessage] });
+
+      // Emit to receiver
       socket.emit("sendMessage", {
-        ...savedMessage,
+        ...formattedMessage,
         receiverId: selectedUser._id,
       });
 
@@ -75,19 +88,19 @@ export const useChatStore = create((set, get) => ({
     if (!selectedUser) return;
 
     const socket = useAuthStore.getState().socket;
-
-    socket.off("newMessage"); // Prevent duplicate listeners
+    socket.off("newMessage");
 
     socket.on("newMessage", (newMessage) => {
       const { selectedUser, messages } = get();
 
-      const isRelevantMessage =
-        newMessage.senderId === selectedUser._id ||
-        newMessage.receiverId === selectedUser._id;
+      const senderId = newMessage.senderId?._id || newMessage.senderId;
+      const receiverId = newMessage.receiverId?._id || newMessage.receiverId;
 
-      if (!isRelevantMessage) return;
+      const isRelevant =
+        senderId === selectedUser._id || receiverId === selectedUser._id;
 
-      // Avoid duplicate message addition
+      if (!isRelevant) return;
+
       const alreadyExists = messages.some((m) => m._id === newMessage._id);
       if (alreadyExists) return;
 
@@ -95,7 +108,7 @@ export const useChatStore = create((set, get) => ({
     });
   },
 
-  // Stop listening for messages
+  // Stop listening
   unsubscribeFromMessages: () => {
     const socket = useAuthStore.getState().socket;
     socket.off("newMessage");

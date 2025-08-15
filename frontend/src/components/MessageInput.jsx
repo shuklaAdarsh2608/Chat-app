@@ -21,7 +21,6 @@ const MessageInput = () => {
     return () => unsubscribeFromMessages();
   }, [selectedUser, subscribeToMessages, unsubscribeFromMessages]);
 
-  // Handle image selection
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -31,19 +30,16 @@ const MessageInput = () => {
       return;
     }
 
-    // Keep actual file for sending + preview for UI
     const reader = new FileReader();
     reader.onloadend = () => setImagePreview({ file, preview: reader.result });
     reader.readAsDataURL(file);
   };
 
-  // Remove selected image
   const removeImage = () => {
     setImagePreview(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // Send message (text + optional image)
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!text.trim() && !imagePreview) return;
@@ -52,10 +48,11 @@ const MessageInput = () => {
       const formData = new FormData();
       formData.append("text", text.trim());
       if (imagePreview?.file) {
-        formData.append("image", imagePreview.file); // send file to backend
+        formData.append("image", imagePreview.file);
       }
+      formData.append("receiverId", selectedUser._id);
 
-      await sendMessage(formData); // backend handles Cloudinary upload
+      await sendMessage(formData);
 
       setText("");
       removeImage();
@@ -67,7 +64,6 @@ const MessageInput = () => {
 
   return (
     <div className="p-4 w-full">
-      {/* Image Preview */}
       {imagePreview?.preview && (
         <div className="mb-3 flex items-center gap-2">
           <div className="relative">
@@ -87,7 +83,6 @@ const MessageInput = () => {
         </div>
       )}
 
-      {/* Message Input Form */}
       <form onSubmit={handleSendMessage} className="flex items-center gap-2">
         <div className="flex-1 flex gap-2">
           <input
