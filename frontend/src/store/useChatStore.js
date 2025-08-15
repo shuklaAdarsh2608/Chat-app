@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { axiosInstance } from "../lib/axios";
 import { useAuthStore } from "./useAuthStore";
 
+// Cloudinary config
 const CLOUDINARY_UPLOAD_PRESET = "YOUR_UPLOAD_PRESET";
 const CLOUDINARY_CLOUD_NAME = "YOUR_CLOUD_NAME";
 
@@ -29,7 +30,7 @@ export const useChatStore = create((set, get) => ({
     set({ isMessagesLoading: true });
     try {
       const res = await axiosInstance.get(`/messages/${userId}`);
-      set({ messages: res.data }); // replace old messages
+      set({ messages: res.data });
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to load messages");
     } finally {
@@ -42,6 +43,8 @@ export const useChatStore = create((set, get) => ({
     if (!selectedUser) return;
 
     let imageUrl = null;
+
+    // Upload image to Cloudinary if provided
     if (imageFile) {
       try {
         const formData = new FormData();
@@ -61,6 +64,7 @@ export const useChatStore = create((set, get) => ({
       }
     }
 
+    // Send message to backend
     try {
       const res = await axiosInstance.post(
         `/messages/send/${selectedUser._id}`,
@@ -75,11 +79,13 @@ export const useChatStore = create((set, get) => ({
   subscribeToMessages: () => {
     const { selectedUser } = get();
     if (!selectedUser) return;
+
     const socket = useAuthStore.getState().socket;
 
     socket.on("newMessage", (newMessage) => {
-      const isFromSelected = newMessage.senderId === selectedUser._id;
-      if (!isFromSelected) return;
+      const isMessageSentFromSelectedUser = newMessage.senderId === selectedUser._id;
+      if (!isMessageSentFromSelectedUser) return;
+
       set({ messages: [...get().messages, newMessage] });
     });
   },
@@ -89,5 +95,5 @@ export const useChatStore = create((set, get) => ({
     socket.off("newMessage");
   },
 
-  setSelectedUser: (user) => set({ selectedUser: user }),
+  setSelectedUser: (selectedUser) => set({ selectedUser }),
 }));

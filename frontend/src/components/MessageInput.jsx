@@ -6,45 +6,45 @@ import toast from "react-hot-toast";
 const MessageInput = () => {
   const [text, setText] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
+  const [imageFile, setImageFile] = useState(null); // store actual file
   const fileInputRef = useRef(null);
   const { sendMessage } = useChatStore();
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
+    if (!file) return;
+
     if (!file.type.startsWith("image/")) {
       toast.error("Please select an image file");
       return;
     }
 
+    setImageFile(file); // actual file for Cloudinary
+
     const reader = new FileReader();
     reader.onloadend = () => {
-      setImagePreview(reader.result);
+      setImagePreview(reader.result); // preview only
     };
     reader.readAsDataURL(file);
   };
 
   const removeImage = () => {
+    setImageFile(null);
     setImagePreview(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!text.trim() && !imagePreview) return;
+    if (!text.trim() && !imageFile) return;
 
-    try {
-      await sendMessage({
-        text: text.trim(),
-        image: imagePreview,
-      });
+    await sendMessage({
+      text: text.trim(),
+      imageFile, // send actual file, not base64
+    });
 
-      // Clear form
-      setText("");
-      setImagePreview(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (error) {
-      console.error("Failed to send message:", error);
-    }
+    setText("");
+    removeImage();
   };
 
   return (
@@ -63,7 +63,7 @@ const MessageInput = () => {
               flex items-center justify-center"
               type="button"
             >
-              <X className="size-3" />
+              <X size={16} />
             </button>
           </div>
         </div>
@@ -98,7 +98,7 @@ const MessageInput = () => {
         <button
           type="submit"
           className="btn btn-sm btn-circle"
-          disabled={!text.trim() && !imagePreview}
+          disabled={!text.trim() && !imageFile}
         >
           <Send size={22} />
         </button>
@@ -106,4 +106,5 @@ const MessageInput = () => {
     </div>
   );
 };
+
 export default MessageInput;
