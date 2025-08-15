@@ -10,7 +10,7 @@ export const useChatStore = create((set, get) => ({
   isUsersLoading: false,
   isMessagesLoading: false,
 
-  // Fetch all chat users
+  // Fetch chat users
   getUsers: async () => {
     set({ isUsersLoading: true });
     try {
@@ -23,12 +23,25 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  // Fetch messages for a selected user
+  // Fetch messages for selected user
   getMessages: async (userId) => {
     set({ isMessagesLoading: true });
     try {
       const res = await axiosInstance.get(`/messages/${userId}`);
-      set({ messages: res.data || [] });
+      // Normalize message structure for UI
+      const normalized = (res.data || []).map(msg => ({
+        _id: msg._id,
+        text: msg.text || msg.message || "",
+        image: msg.image ? (
+          msg.image.startsWith("http")
+            ? msg.image
+            : `${import.meta.env.VITE_API_BASE_URL}/${msg.image}`
+        ) : null,
+        senderId: msg.senderId,
+        receiverId: msg.receiverId,
+        createdAt: msg.createdAt
+      }));
+      set({ messages: normalized });
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to load messages");
     } finally {
@@ -36,7 +49,7 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  // Send message (text + optional image)
+  // Send message
   sendMessage: async (messageData) => {
     const { selectedUser, messages } = get();
     const socket = useAuthStore.getState().socket;
@@ -47,7 +60,6 @@ export const useChatStore = create((set, get) => ({
     }
 
     try {
-      // Send FormData to backend
       const res = await axiosInstance.post(
         `/messages/send/${selectedUser._id}`,
         messageData,
@@ -55,20 +67,26 @@ export const useChatStore = create((set, get) => ({
       );
 
       const savedMessage = res.data;
+      const normalized = {
+        _id: savedMessage._id,
+        text: savedMessage.text || savedMessage.message || "",
+        image: savedMessage.image ? (
+          savedMessage.image.startsWith("http")
+            ? savedMessage.image
+            : `${import.meta.env.VITE_API_BASE_URL}/${savedMessage.image}`
+        ) : null,
+        senderId: savedMessage.senderId,
+        receiverId: savedMessage.receiverId,
+        createdAt: savedMessage.createdAt
+      };
 
-      // Ensure the backend sends full image URL if present
-      if (savedMessage.image && !savedMessage.image.startsWith("http")) {
-        savedMessage.image = `${import.meta.env.VITE_API_BASE_URL}/${savedMessage.image}`;
-      }
+      set({ messages: [...messages, normalized] });
 
-      // Update local UI immediately
-      set({ messages: [...messages, savedMessage] });
-
-      // Emit via socket
       socket.emit("sendMessage", {
-        ...savedMessage,
-        receiverId: selectedUser._id,
+        ...normalized,
+        receiverId: selectedUser._id
       });
+
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to send message");
     }
@@ -77,31 +95,39 @@ export const useChatStore = create((set, get) => ({
   // Listen for incoming messages
   subscribeToMessages: () => {
     const socket = useAuthStore.getState().socket;
-
-    socket.off("newMessage"); // Prevent duplicate listeners
+    socket.off("newMessage");
 
     socket.on("newMessage", (newMessage) => {
       const { selectedUser, messages } = get();
-
-      const isRelevantMessage =
+      const isRelevant =
         newMessage.senderId === selectedUser?._id ||
         newMessage.receiverId === selectedUser?._id;
 
-      if (!isRelevantMessage) return;
+      if (!isRelevant) return;
 
-      // Avoid duplicates
-      if (!messages.some((m) => m._id === newMessage._id)) {
-        set({ messages: [...messages, newMessage] });
+      const normalized = {
+        _id: newMessage._id,
+        text: newMessage.text || newMessage.message || "",
+        image: newMessage.image ? (
+          newMessage.image.startsWith("http")
+            ? newMessage.image
+            : `${import.meta.env.VITE_API_BASE_URL}/${newMessage.image}`
+        ) : null,
+        senderId: newMessage.senderId,
+        receiverId: newMessage.receiverId,
+        createdAt: newMessage.createdAt
+      };
+
+      if (!messages.some((m) => m._id === normalized._id)) {
+        set({ messages: [...messages, normalized] });
       }
     });
   },
 
-  // Stop listening for messages
   unsubscribeFromMessages: () => {
     const socket = useAuthStore.getState().socket;
     socket.off("newMessage");
   },
 
-  // Select user
   setSelectedUser: (selectedUser) => set({ selectedUser }),
 }));
