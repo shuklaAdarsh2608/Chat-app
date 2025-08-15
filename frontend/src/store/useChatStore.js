@@ -3,10 +3,6 @@ import toast from "react-hot-toast";
 import { axiosInstance } from "../lib/axios";
 import { useAuthStore } from "./useAuthStore";
 
-// Cloudinary config
-const CLOUDINARY_UPLOAD_PRESET = "YOUR_UPLOAD_PRESET";
-const CLOUDINARY_CLOUD_NAME = "YOUR_CLOUD_NAME";
-
 export const useChatStore = create((set, get) => ({
   messages: [],
   users: [],
@@ -14,6 +10,7 @@ export const useChatStore = create((set, get) => ({
   isUsersLoading: false,
   isMessagesLoading: false,
 
+  // Fetch all chat users
   getUsers: async () => {
     set({ isUsersLoading: true });
     try {
@@ -26,6 +23,7 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
+  // Fetch messages for a selected user
   getMessages: async (userId) => {
     set({ isMessagesLoading: true });
     try {
@@ -38,62 +36,71 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  sendMessage: async ({ text, imageFile }) => {
+  // Send message (text or image)
+  sendMessage: async (messageData) => {
     const { selectedUser, messages } = get();
-    if (!selectedUser) return;
+    const socket = useAuthStore.getState().socket;
 
-    let imageUrl = null;
-
-    // Upload image to Cloudinary if provided
-    if (imageFile) {
-      try {
-        const formData = new FormData();
-        formData.append("file", imageFile);
-        formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-
-        const res = await fetch(
-          `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-          { method: "POST", body: formData }
-        );
-        const data = await res.json();
-        imageUrl = data.secure_url;
-      } catch (err) {
-        console.error("Cloudinary upload failed:", err);
-        toast.error("Failed to upload image");
-        return;
-      }
+    if (!selectedUser) {
+      toast.error("Please select a user first");
+      return;
     }
 
-    // Send message to backend
     try {
+      // Save to DB
       const res = await axiosInstance.post(
         `/messages/send/${selectedUser._id}`,
-        { text, image: imageUrl }
+        messageData
       );
-      set({ messages: [...messages, res.data] });
+
+      const savedMessage = res.data;
+
+      // Update own UI instantly
+      set({ messages: [...messages, savedMessage] });
+
+      // Emit to receiver via socket (include image if present)
+      socket.emit("sendMessage", {
+        ...savedMessage,
+        receiverId: selectedUser._id,
+      });
+
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to send message");
     }
   },
 
+  // Listen for incoming messages
   subscribeToMessages: () => {
     const { selectedUser } = get();
     if (!selectedUser) return;
 
     const socket = useAuthStore.getState().socket;
 
-    socket.on("newMessage", (newMessage) => {
-      const isMessageSentFromSelectedUser = newMessage.senderId === selectedUser._id;
-      if (!isMessageSentFromSelectedUser) return;
+    socket.off("newMessage"); // Prevent duplicate listeners
 
-      set({ messages: [...get().messages, newMessage] });
+    socket.on("newMessage", (newMessage) => {
+      const { selectedUser, messages } = get();
+
+      const isRelevantMessage =
+        newMessage.senderId === selectedUser._id ||
+        newMessage.receiverId === selectedUser._id;
+
+      if (!isRelevantMessage) return;
+
+      // Avoid duplicate message addition
+      const alreadyExists = messages.some((m) => m._id === newMessage._id);
+      if (alreadyExists) return;
+
+      set({ messages: [...messages, newMessage] });
     });
   },
 
+  // Stop listening for messages
   unsubscribeFromMessages: () => {
     const socket = useAuthStore.getState().socket;
     socket.off("newMessage");
   },
 
+  // Select user to chat with
   setSelectedUser: (selectedUser) => set({ selectedUser }),
 }));
