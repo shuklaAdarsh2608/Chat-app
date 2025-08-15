@@ -28,7 +28,7 @@ export const useChatStore = create((set, get) => ({
     set({ isMessagesLoading: true });
     try {
       const res = await axiosInstance.get(`/messages/${userId}`);
-      set({ messages: res.data });
+      set({ messages: res.data || [] });
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to load messages");
     } finally {
@@ -36,7 +36,7 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  // Send message (text or image)
+  // Send message (text + optional image)
   sendMessage: async (messageData) => {
     const { selectedUser, messages } = get();
     const socket = useAuthStore.getState().socket;
@@ -47,23 +47,28 @@ export const useChatStore = create((set, get) => ({
     }
 
     try {
-      // Save to DB
+      // Send FormData to backend
       const res = await axiosInstance.post(
         `/messages/send/${selectedUser._id}`,
-        messageData
+        messageData,
+        { headers: { "Content-Type": "multipart/form-data" } }
       );
 
       const savedMessage = res.data;
 
-      // Update own UI instantly
+      // Ensure the backend sends full image URL if present
+      if (savedMessage.image && !savedMessage.image.startsWith("http")) {
+        savedMessage.image = `${import.meta.env.VITE_API_BASE_URL}/${savedMessage.image}`;
+      }
+
+      // Update local UI immediately
       set({ messages: [...messages, savedMessage] });
 
-      // Emit to receiver via socket (include image if present)
+      // Emit via socket
       socket.emit("sendMessage", {
         ...savedMessage,
         receiverId: selectedUser._id,
       });
-
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to send message");
     }
@@ -71,9 +76,6 @@ export const useChatStore = create((set, get) => ({
 
   // Listen for incoming messages
   subscribeToMessages: () => {
-    const { selectedUser } = get();
-    if (!selectedUser) return;
-
     const socket = useAuthStore.getState().socket;
 
     socket.off("newMessage"); // Prevent duplicate listeners
@@ -82,16 +84,15 @@ export const useChatStore = create((set, get) => ({
       const { selectedUser, messages } = get();
 
       const isRelevantMessage =
-        newMessage.senderId === selectedUser._id ||
-        newMessage.receiverId === selectedUser._id;
+        newMessage.senderId === selectedUser?._id ||
+        newMessage.receiverId === selectedUser?._id;
 
       if (!isRelevantMessage) return;
 
-      // Avoid duplicate message addition
-      const alreadyExists = messages.some((m) => m._id === newMessage._id);
-      if (alreadyExists) return;
-
-      set({ messages: [...messages, newMessage] });
+      // Avoid duplicates
+      if (!messages.some((m) => m._id === newMessage._id)) {
+        set({ messages: [...messages, newMessage] });
+      }
     });
   },
 
@@ -101,6 +102,6 @@ export const useChatStore = create((set, get) => ({
     socket.off("newMessage");
   },
 
-  // Select user to chat with
+  // Select user
   setSelectedUser: (selectedUser) => set({ selectedUser }),
 }));

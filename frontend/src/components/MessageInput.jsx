@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 
 const MessageInput = () => {
   const [text, setText] = useState("");
-  const [imagePreview, setImagePreview] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null); // { file, preview }
   const fileInputRef = useRef(null);
 
   const {
@@ -15,10 +15,11 @@ const MessageInput = () => {
     selectedUser,
   } = useChatStore();
 
+  // Subscribe to messages for the selected user
   useEffect(() => {
     if (!selectedUser) return;
-    subscribeToMessages();
-    return () => unsubscribeFromMessages();
+    subscribeToMessages(selectedUser._id);
+    return () => unsubscribeFromMessages(selectedUser._id);
   }, [selectedUser, subscribeToMessages, unsubscribeFromMessages]);
 
   // Handle image selection
@@ -31,7 +32,6 @@ const MessageInput = () => {
       return;
     }
 
-    // Keep actual file for sending + preview for UI
     const reader = new FileReader();
     reader.onloadend = () => setImagePreview({ file, preview: reader.result });
     reader.readAsDataURL(file);
@@ -46,16 +46,20 @@ const MessageInput = () => {
   // Send message (text + optional image)
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!text.trim() && !imagePreview) return;
+
+    if (!text.trim() && !imagePreview) {
+      toast.error("Cannot send empty message");
+      return;
+    }
 
     try {
       const formData = new FormData();
       formData.append("text", text.trim());
       if (imagePreview?.file) {
-        formData.append("image", imagePreview.file); // send file to backend
+        formData.append("image", imagePreview.file);
       }
 
-      await sendMessage(formData); // backend handles Cloudinary upload
+      await sendMessage(formData);
 
       setText("");
       removeImage();
@@ -108,7 +112,7 @@ const MessageInput = () => {
 
           <button
             type="button"
-            className={`hidden sm:flex btn btn-circle ${
+            className={`hidden sm:flex btn btn-circle btn-sm ${
               imagePreview ? "text-emerald-500" : "text-zinc-400"
             }`}
             onClick={() => fileInputRef.current?.click()}
@@ -119,7 +123,7 @@ const MessageInput = () => {
 
         <button
           type="submit"
-          className="btn btn-sm btn-circle"
+          className="btn btn-sm btn-circle btn-primary"
           disabled={!text.trim() && !imagePreview}
         >
           <Send size={22} />
