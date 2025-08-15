@@ -1,64 +1,60 @@
-import Message from "../models/message.models.js";
+import Message from "../models/message.model.js";
 import cloudinary from "../lib/cloudinary.js";
-import User from "../models/user.models.js";
-
-export const sendMessage = async (req, res) => {
-  try {
-    const senderId = req.user._id;
-    const receiverId = req.body.receiverId || req.params.id;
-    const { text } = req.body;
-    let imageUrl = null;
-
-    // Handle image upload if present
-    if (req.file) {
-      const uploaded = await cloudinary.uploader.upload(req.file.path, {
-        folder: "chat_images",
-      });
-      imageUrl = uploaded.secure_url;
-    }
-
-    const message = new Message({
-      sender: senderId,
-      receiver: receiverId,
-      text: text || "",
-      image: imageUrl || "",
-    });
-
-    await message.save();
-
-    res.status(201).json(message);
-  } catch (error) {
-    console.error("Send message error:", error);
-    res.status(500).json({ message: "Failed to send message" });
-  }
-};
+import mongoose from "mongoose";
 
 export const getMessages = async (req, res) => {
   try {
+    const { id: userToChatId } = req.params;
     const senderId = req.user._id;
-    const receiverId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(userToChatId)) {
+      return res.status(400).json({ error: "Invalid user ID" });
+    }
 
     const messages = await Message.find({
       $or: [
-        { sender: senderId, receiver: receiverId },
-        { sender: receiverId, receiver: senderId },
-      ],
+        { senderId, receiverId: userToChatId },
+        { senderId: userToChatId, receiverId: senderId }
+      ]
     }).sort({ createdAt: 1 });
 
-    res.json(messages);
+    res.status(200).json(messages);
   } catch (error) {
-    console.error("Get messages error:", error);
-    res.status(500).json({ message: "Failed to fetch messages" });
+    console.error("Error in getMessages:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
-export const getUsersForSidebar = async (req, res) => {
+export const sendMessage = async (req, res) => {
   try {
-    const loggedInUserId = req.user._id;
-    const users = await User.find({ _id: { $ne: loggedInUserId } });
-    res.json(users);
+    const { text, image } = req.body;
+    const { id: receiverId } = req.params;
+    const senderId = req.user._id;
+
+    let imageUrl = "";
+
+    // If image is sent as Base64, upload to Cloudinary
+    if (image) {
+      const uploadedResponse = await cloudinary.uploader.upload(image, {
+        folder: "chat_images",
+      });
+      imageUrl = uploadedResponse.secure_url;
+    }
+
+    const newMessage = new Message({
+      senderId,
+      receiverId,
+      text,
+      image: imageUrl || null,
+    });
+
+    await newMessage.save();
+
+    // Here you can also emit socket events if you use WebSocket/Socket.io
+
+    res.status(201).json(newMessage);
   } catch (error) {
-    console.error("Sidebar users error:", error);
-    res.status(500).json({ message: "Failed to fetch users" });
+    console.error("Error in sendMessage:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };

@@ -1,18 +1,13 @@
 import express from "express";
 import { protectRoute } from "../middleware/auth.middleware.js";
-import {
-  getMessages,
-  getUsersForSidebar,
-  sendMessage,
-} from "../controllers/message.controller.js";
-import upload from "../middleware/upload.middleware.js"; // Multer setup for file upload
+import { sendMessage, getMessages } from "../controllers/message.controller.js";
 
 const router = express.Router();
 
-router.get("/users", protectRoute, getUsersForSidebar);
+// Get all messages between two users
 router.get("/:id", protectRoute, getMessages);
 
-// Add upload.single("image") to handle image uploads
-router.post("/send/:id", protectRoute, upload.single("image"), sendMessage);
+// Send a message (text and/or image)
+router.post("/send/:id", protectRoute, sendMessage);
 
 export default router;
